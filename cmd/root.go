@@ -1,34 +1,67 @@
-
 package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
+	"log"
 	"os"
 
-	homedir "github.com/mitchellh/go-homedir"
-	"github.com/spf13/viper"
+	idictconfig "github.com/lai323/idict/config"
+	"github.com/lai323/idict/dict"
+	"github.com/lai323/idict/training"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 )
 
-var cfgFile string
+var (
+	configPath            string
+	storagePath           string
+	config                idictconfig.Config
+	refreshInterval       int
+	interactive           bool
+	extraInfoExchange     bool
+	extraInfoFundamentals bool
+	proxy                 string
+	showSummary           bool
+	sort                  string
+	rootCmd               = &cobra.Command{Use: "idict"}
+	transCmd              = &cobra.Command{
+		Use:   "trans",
+		Short: "translate one word or sentence",
+		RunE: dict.Run(
+			&config,
+			afero.NewOsFs(),
+			dict.Options{
+				RefreshInterval:       &refreshInterval,
+				Interactive:           &interactive,
+				ExtraInfoExchange:     &extraInfoExchange,
+				ExtraInfoFundamentals: &extraInfoFundamentals,
+				ShowSummary:           &showSummary,
+				Proxy:                 &proxy,
+				Sort:                  &sort,
+			},
+			dict.Start(&config)),
+	}
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "idict",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
+	trainingCmd = &cobra.Command{
+		Use:   "training",
+		Short: "training english",
+		Args: training.ValidateCli(
+			&config,
+			afero.NewOsFs(),
+			training.Options{
+				RefreshInterval:       &refreshInterval,
+				Interactive:           &interactive,
+				ExtraInfoExchange:     &extraInfoExchange,
+				ExtraInfoFundamentals: &extraInfoFundamentals,
+				ShowSummary:           &showSummary,
+				Proxy:                 &proxy,
+				Sort:                  &sort,
+			},
+		),
+		Run: training.Run(training.Start(&config)),
+	}
+)
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	//	Run: func(cmd *cobra.Command, args []string) { },
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
@@ -38,40 +71,16 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.idict.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", fmt.Sprintf("config file (default is %s)", idictconfig.DefaultConfigPath))
+	rootCmd.PersistentFlags().StringVar(&storagePath, "storage", "", fmt.Sprintf("storage dir (default is %s)", idictconfig.DefaultStorageDir))
+	rootCmd.AddCommand(trainingCmd)
+	rootCmd.AddCommand(transCmd)
 }
 
-// initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Find home directory.
-		home, err := homedir.Dir()
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		// Search config in home directory with name ".idict" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigName(".idict")
-	}
-
-	viper.AutomaticEnv() // read in environment variables that match
-
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	var err error
+	config, err = idictconfig.InitConfig(afero.NewOsFs(), configPath)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
