@@ -39,10 +39,9 @@ type Word struct {
 }
 
 type GuessWord struct {
-	Label      string
-	Value      string
-	Hlword     string
-	Hlwordshow string
+	Label string
+	Value string
+	// Hlword     string
 }
 
 type Phrase struct {
@@ -149,7 +148,7 @@ func (d EuDictClient) Fetch(text string) (error, Word, []Phrase, []Sentence) {
 
 	translatelist1 := htmlquery.Find(doc, `//div[@id="ExpFCChild"]//div[@class="exp"]|//div[@id="ExpFCChild"]//div[@class="exp"]/ol/li`)
 	for _, trans := range translatelist1 {
-		node :=  htmlquery.FindOne(trans, `./text()`)
+		node := htmlquery.FindOne(trans, `./text()`)
 		if node != nil {
 			transText := htmlquery.InnerText(node)
 			transText = strings.TrimSpace(transText)
@@ -173,10 +172,28 @@ func (d EuDictClient) Fetch(text string) (error, Word, []Phrase, []Sentence) {
 		word.Translates = append(word.Translates, Translate{Mean: transText})
 	}
 
+	translatelist3 := htmlquery.FindOne(doc, `//div[@id="ExpFCChild"]`)
+	if translatelist3 != nil {
+
+		var (
+			transText  string
+			transiText string
+		)
+		transnode := htmlquery.FindOne(translatelist3, `./text()`)
+		transinode := htmlquery.FindOne(translatelist3, `./i/text()`)
+		if transnode != nil {
+			transText = strings.TrimSpace(htmlquery.InnerText(transnode))
+		}
+		if transinode != nil {
+			transiText = strings.TrimSpace(htmlquery.InnerText(transinode))
+
+		}
+		word.Translates = append(word.Translates, Translate{Part: transiText, Mean: transText})
+	}
+
 	// {
 	// 	// 翻译句子时 参考译文的部分
 	// 	sentenceTrans := htmlquery.FindOne(doc, `//div[@id="tbTransResult"]/span`)
-	// 	logfile(sentenceTrans)
 	// 	transText := htmlquery.InnerText(sentenceTrans)
 	// 	transText = strings.TrimSpace(transText)
 	// 	if transText != ""{
@@ -247,11 +264,16 @@ func (d EuDictClient) Guess(text string) (error, []GuessWord) {
 	if err != nil {
 		return utils.FmtErrorf("guess word error", err), guesses
 	}
-	for _, w := range guesses {
-		bold := getBold(w.Hlword)
-		oldBold := fmt.Sprintf("<b>%s</b>", bold)
-		newBold := termenv.String("\n  ↑/↓: Navigate • q: Quit\n").Foreground(term.Color("241")).String()
-		w.Hlwordshow = strings.Replace(w.Hlword, oldBold, newBold, -1)
+	for i := range guesses {
+		l := guesses[i].Label
+		v := guesses[i].Value
+		l = strings.Replace(l, "（", "(", -1)
+		l = strings.Replace(l, "）", ")", -1)
+		// l = strings.Replace(l, "...", "", -1)
+		guesses[i].Value = strings.TrimSpace(v)
+		guesses[i].Label = strings.TrimSpace(l)
+		// fmt.Println(l)
+		// fmt.Println(guesses[i].Label)
 	}
 	return nil, guesses
 }

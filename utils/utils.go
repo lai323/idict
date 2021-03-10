@@ -24,7 +24,6 @@ func InnerTextWithOutChild(n *html.Node) string {
 			return
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			fmt.Println(child)
 			output(buf, child)
 		}
 	}

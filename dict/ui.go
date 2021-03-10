@@ -1,39 +1,31 @@
 package dict
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	idictconfig "github.com/lai323/idict/config"
 	"github.com/lai323/idict/ui"
+	"github.com/muesli/reflow/wordwrap"
 	te "github.com/muesli/termenv"
-	"log"
-	"os"
-	"strings"
-	"time"
-	// "github.com/charmbracelet/bubbles/viewport"
-)
-
-const (
-	footerHeight = 1
-	headerHeight = 0
-
-	focusedTextColor = "205"
 )
 
 var (
-	color               = te.ColorProfile().Color
-	focusedPrompt       = te.String(": ").Foreground(color("205")).String()
-	blurredPrompt       = ": "
-	focusedSubmitButton = "[ " + te.String("Submit").Foreground(color("205")).String() + " ]"
-	blurredSubmitButton = "[ " + te.String("Submit").Foreground(color("240")).String() + " ]"
+	focusedPrompt = te.String(": ").Foreground(te.ColorProfile().Color("205")).String()
 )
 
-// type guessesModel struct {
-// 	guessesFocus int
-// 	guesses      []string
-// }
+type WordMsg struct {
+	Word      Word
+	Phrases   []Phrase
+	Sentences []Sentence
+}
 
 type transModel struct {
 	word WordMsg
@@ -47,13 +39,13 @@ func (m transModel) View() string {
 	)
 
 	for _, t := range m.word.Word.Translates {
-		transtext += fmt.Sprintf("%s %s\n", t.Mean, t.Part)
+		transtext += fmt.Sprintf("%s %s\n", ui.StyleMean(t.Mean), ui.StylePart(t.Part))
 	}
 	for _, p := range m.word.Phrases {
-		phrasetext += fmt.Sprintf("%s: %s\n", p.Text, p.Trans)
+		phrasetext += fmt.Sprintf("%s: %s\n", ui.StylePhrasesText(p.Text), p.Trans)
 	}
 	for _, s := range m.word.Sentences {
-		sentencetext += fmt.Sprintf("%s: %s\n", s.Text, s.Trans)
+		sentencetext += fmt.Sprintf("%s: \n    %s\n", ui.StyleSentencesText(s.Text), s.Trans)
 	}
 
 	return strings.Join([]string{
@@ -63,38 +55,44 @@ func (m transModel) View() string {
 	}, "\n")
 }
 
-type DictModel struct {
-	cli                 DictClient
-	config              *idictconfig.Config
-	text                string
-	ready               bool
-	textInput           textinput.Model
-	viewport            viewport.Model
-	transmodel          transModel
-	width               int
-	textInputLeftMargin int
-	// guesses   guessesModel
+type GuessMsg struct {
+	words []GuessWord
 }
 
-type WordMsg struct {
-	Word      Word
-	Phrases   []Phrase
-	Sentences []Sentence
+type guessModel struct {
+	words GuessMsg
+}
+
+func (m guessModel) View() string {
+	var wordtext []string
+	for _, w := range m.words.words {
+		wordtext = append(wordtext,
+			ui.Line(
+				78,
+				ui.Cell{
+					Align: ui.LeftAlign,
+					Text:  "|" + ui.StyleGuessText(w.Value) + "|",
+				},
+				ui.Cell{
+					Align: ui.RightAlign,
+					Text:  "|" + ui.StyleGuessText(w.Label) + "|",
+				},
+			))
+
+		// wordtext = append(wordtext, strings.Join([]string{w.Value, w.Label}, "|"))
+	}
+	return strings.Join(wordtext, "\n")
+
 }
 
 func Fetch(cli DictClient, text string) func() tea.Msg {
 	return func() tea.Msg {
-		_, word, phrases, sentences := cli.Fetch(text)
+		err, word, phrases, sentences := cli.Fetch(text)
+		if err != nil {
+			panic(fmt.Errorf("fetch translate word error: %s", err.Error()))
+		}
 		return WordMsg{Word: word, Phrases: phrases, Sentences: sentences}
 	}
-}
-
-func (m DictModel) Init() tea.Cmd {
-	if m.text == "" {
-		return textinput.Blink
-	}
-	m.textInput.SetValue(m.text)
-	return tea.Batch(textinput.Blink, Fetch(m.cli, m.text))
 }
 
 func initialDictModel(text string) DictModel {
@@ -105,13 +103,69 @@ func initialDictModel(text string) DictModel {
 	m.textInput.Placeholder = "Type to input"
 	m.textInput.Focus()
 	m.textInput.Prompt = focusedPrompt
-	m.textInput.TextColor = focusedTextColor
-	m.textInput.CharLimit = 300
+	m.textInput.TextColor = ui.InputTextColor
+	m.textInput.CharLimit = 600
 	m.textInput.Width = 60
 	m.textInput.SetValue(text)
 	m.textInput.SetCursor(len(text))
-	m.textInputLeftMargin = 0
+	m.guessctx = context.Background()
+	m.guessdelay = 300
 	return m
+}
+
+type DictModel struct {
+	cli             DictClient
+	config          *idictconfig.Config
+	text            string
+	ready           bool
+	textInput       textinput.Model
+	lastinputat     int64
+	viewport        viewport.Model
+	viewportContent string
+	transmodel      transModel
+	guessmodel      guessModel
+	guessctx        context.Context
+	guessctxcancel  context.CancelFunc
+	guessdelay      int64
+	width           int
+}
+
+func (m DictModel) Init() tea.Cmd {
+	if m.text == "" {
+		return textinput.Blink
+	}
+	m.textInput.SetValue(m.text)
+	return tea.Batch(textinput.Blink, Fetch(m.cli, m.text))
+}
+
+func (m *DictModel) guessCmd() tea.Cmd {
+	nowunix := UnixMillNow()
+	if m.lastinputat == 0 {
+		m.lastinputat = nowunix
+		return nil
+	}
+	if m.guessctxcancel != nil && nowunix-m.lastinputat < m.guessdelay {
+		m.guessctxcancel()
+	}
+
+	ctx, cancel := context.WithCancel(m.guessctx)
+	m.guessctxcancel = cancel
+
+	return func() tea.Msg {
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(time.Millisecond * time.Duration(m.guessdelay)):
+				err, words := m.cli.Guess(m.textInput.Value())
+				if err != nil {
+					panic(fmt.Errorf("guess word error: %s", err.Error()))
+				}
+				return GuessMsg{words: words}
+			}
+		}
+	}
 }
 
 func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -123,21 +177,26 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-
-		case "ctrl+c":
-			return m, tea.Quit
-
-		// Cycle between inputs
-		// case "tab", "shift+tab", "enter", "up", "down":
+		case "i":
+			if !m.textInput.Focused() {
+				m.textInput.Focus()
+				return m, tea.Batch(cmds...)
+			}
 		case "enter":
-			fallthrough
+			m.textInput.Blur()
+			cmds = append(cmds, Fetch(m.cli, m.textInput.Value()))
 		case "esc":
 			m.textInput.Blur()
+		case "ctrl+c":
+			return m, tea.Quit
+		}
+		if m.textInput.Focused() {
+			cmds = append(cmds, m.guessCmd())
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		viewportHeight := msg.Height - headerHeight - footerHeight - 1
+		viewportHeight := msg.Height - 2 // input 占一行 footer 占一行
 		if !m.ready {
 			m.viewport = viewport.Model{Width: msg.Width, Height: viewportHeight}
 			m.ready = true
@@ -145,15 +204,15 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = viewportHeight
 		}
-		m.textInput.Blur()
+		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 	case WordMsg:
-		log.Println(msg)
 		m.transmodel.word = msg
-		m.viewport.SetContent(strings.Join(
-			[]string{
-				m.transmodel.View(),
-			}, "",
-		))
+		m.viewportContent = m.transmodel.View()
+		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
+	case GuessMsg:
+		m.guessmodel.words = msg
+		m.viewportContent = m.guessmodel.View()
+		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 	}
 
 	// Handle character input and blinks
@@ -178,12 +237,11 @@ func (m DictModel) View() string {
 
 	return strings.Join(
 		[]string{
-			strings.Repeat("\n", headerHeight),
-			strings.Repeat(" ", m.textInputLeftMargin) + m.textInput.View(),
-			m.viewport.View(),
+			m.textInput.View(), "\n",
+			m.viewport.View(), "\n",
 			footer(m.viewport.Width),
 		},
-		"\n",
+		"",
 	)
 }
 
@@ -204,7 +262,7 @@ func footer(width int) string {
 		},
 		ui.Cell{
 			Width: 50,
-			Text:  ui.StyleHelp("ctrl+c: exit esc: quit input enter: query"),
+			Text:  ui.StyleHelp("ctrl+c:exit | ?:more help"),
 		},
 		ui.Cell{
 			// Text:  ui.StyleHelp("⟳  " + tstr),
@@ -234,4 +292,8 @@ func logfile(v interface{}) {
 
 	log.SetOutput(f)
 	log.Println(v)
+}
+
+func UnixMillNow() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
 }

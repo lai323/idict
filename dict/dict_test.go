@@ -9,7 +9,7 @@ import (
 
 func TestEuDictGuess(t *testing.T) {
 	cli := EuDictClient{}
-	words, err := cli.Guess("gab")
+	words, err := cli.Guess("ap")
 	fmt.Println(words, err)
 }
 

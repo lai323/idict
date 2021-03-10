@@ -1,10 +1,7 @@
 package training
 
 import (
-	// "errors"
 	"errors"
-	"fmt"
-	// "strings"
 
 	idictconfig "github.com/lai323/idict/config"
 	"github.com/spf13/afero"
@@ -28,7 +25,6 @@ func Run(uiStartFn func() error) func(*cobra.Command, []string) {
 		// if err != nil {
 		// 	fmt.Println(fmt.Errorf("Unable to start UI: %w", err).Error())
 		// }
-		fmt.Println("Run", args)
 	}
 }
 

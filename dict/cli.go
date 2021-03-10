@@ -24,7 +24,6 @@ type Options struct {
 func Run(config *idictconfig.Config, fs afero.Fs, options Options, uistarter func(string) error) func(*cobra.Command, []string) error {
 
 	return func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Run", args)
 		var text string
 		// 验证 options, config, args; 合并 config
 		if len(args) > 1 {
