@@ -5,13 +5,14 @@ import (
 )
 
 var (
-	StyleLogo          = NewStyle("#ffc27d", "#f37329", true, false)
-	StyleHelp          = NewStyle("#4e4e4e", "", true, false)
-	StyleMean          = NewStyle("#ffffff", "", false, false)
-	StylePart          = NewStyle("#66C2CD", "", false, true)
-	StylePhrasesText   = NewStyle("#B9BFCA", "", false, false)
-	StyleSentencesText = NewStyle("#B9BFCA", "", false, false)
-	StyleGuessText     = NewStyle("#D290E4", "", false, false)
+	StyleLogo            = NewStyle("#ffc27d", "#f37329", true, false)
+	StyleHelp            = NewStyle("#4e4e4e", "", true, false)
+	StyleMean            = NewStyle("#ffffff", "", false, false)
+	StylePart            = NewStyle("#66C2CD", "", false, true)
+	StylePhrasesText     = NewStyle("#B9BFCA", "", false, false)
+	StyleSentencesText   = NewStyle("#B9BFCA", "", false, false)
+	StyleGuessText       = NewStyle("#D290E4", "", false, false)
+	StyleGuessTextSelect = NewStyle("#ff5faf", "", true, false)
 )
 
 const (

@@ -60,26 +60,32 @@ type GuessMsg struct {
 }
 
 type guessModel struct {
-	words GuessMsg
+	words  GuessMsg
+	active bool
+	cursor int
 }
 
 func (m guessModel) View() string {
 	var wordtext []string
-	for _, w := range m.words.words {
+	selected := m.cursor - 1
+	for i, w := range m.words.words {
+		style := ui.StyleGuessText
+		if i == selected {
+			style = ui.StyleGuessTextSelect
+		}
 		wordtext = append(wordtext,
-			ui.Line(
-				78,
+			style(ui.Line(
+				70,
+				ui.Cell{
+					// Width: ,
+					Align: ui.LeftAlign,
+					Text:  w.Value,
+				},
 				ui.Cell{
 					Align: ui.LeftAlign,
-					Text:  "|" + ui.StyleGuessText(w.Value) + "|",
+					Text:  w.Label,
 				},
-				ui.Cell{
-					Align: ui.RightAlign,
-					Text:  "|" + ui.StyleGuessText(w.Label) + "|",
-				},
-			))
-
-		// wordtext = append(wordtext, strings.Join([]string{w.Value, w.Label}, "|"))
+			)))
 	}
 	return strings.Join(wordtext, "\n")
 
@@ -177,18 +183,41 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "i":
+		case "i", "backspace":
 			if !m.textInput.Focused() {
 				m.textInput.Focus()
 				return m, tea.Batch(cmds...)
 			}
 		case "enter":
 			m.textInput.Blur()
-			cmds = append(cmds, Fetch(m.cli, m.textInput.Value()))
+			if m.guessmodel.cursor != 0 {
+				text := m.guessmodel.words.words[m.guessmodel.cursor-1].Value
+				m.textInput.SetValue(text)
+				m.textInput.SetCursor(len(text))
+				cmds = append(cmds, Fetch(m.cli, text))
+			} else {
+				cmds = append(cmds, Fetch(m.cli, m.textInput.Value()))
+			}
 		case "esc":
 			m.textInput.Blur()
 		case "ctrl+c":
 			return m, tea.Quit
+		case "up":
+			if m.guessmodel.active {
+				m.guessmodel.cursor -= 1
+				if m.guessmodel.cursor <= 0 {
+					m.guessmodel.cursor = len(m.guessmodel.words.words)
+				}
+				m.updateguess()
+			}
+		case "down":
+			if m.guessmodel.active {
+				m.guessmodel.cursor += 1
+				if m.guessmodel.cursor > len(m.guessmodel.words.words) {
+					m.guessmodel.cursor = 1
+				}
+				m.updateguess()
+			}
 		}
 		if m.textInput.Focused() {
 			cmds = append(cmds, m.guessCmd())
@@ -206,13 +235,15 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 	case WordMsg:
+		m.guessmodel.active = false
+		m.guessmodel.cursor = 0
 		m.transmodel.word = msg
 		m.viewportContent = m.transmodel.View()
 		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 	case GuessMsg:
 		m.guessmodel.words = msg
-		m.viewportContent = m.guessmodel.View()
-		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
+		m.guessmodel.active = true
+		m.updateguess()
 	}
 
 	// Handle character input and blinks
@@ -225,6 +256,11 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *DictModel) updateguess() {
+	m.viewportContent = m.guessmodel.View()
+	m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 }
 
 func (m DictModel) View() string {

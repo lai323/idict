@@ -122,9 +122,11 @@ func (d EuDictClient) Fetch(text string) (error, Word, []Phrase, []Sentence) {
 	pronouncelist := htmlquery.Find(doc, `//span[@class="Phonitic"]`)
 	if len(pronouncelist) != 0 {
 		phoneticUK := htmlquery.InnerText(htmlquery.FindOne(pronouncelist[0], `./text()`))
-		phoneticUS := htmlquery.InnerText(htmlquery.FindOne(pronouncelist[1], `./text()`))
+		if len(pronouncelist) == 2 {
+			phoneticUS := htmlquery.InnerText(htmlquery.FindOne(pronouncelist[1], `./text()`))
+			word.PronounceUS = Pronounce{Phonetic: phoneticUS}
+		}
 		word.PronounceUK = Pronounce{Phonetic: phoneticUK}
-		word.PronounceUS = Pronounce{Phonetic: phoneticUS}
 	}
 
 	translatelist := htmlquery.Find(doc, `//div[@id="ExpFCChild"]/ol/li`)
@@ -223,7 +225,11 @@ func (d EuDictClient) Fetch(text string) (error, Word, []Phrase, []Sentence) {
 			phrasetext  string
 			phrasetrans string
 		)
-		phrasetext = htmlquery.InnerText(htmlquery.FindOne(pdiv, `./i/text()`))
+		itext := htmlquery.FindOne(pdiv, `./i/text()`)
+		if itext == nil {
+			continue
+		}
+		phrasetext = htmlquery.InnerText(itext)
 		phrasetrans = htmlquery.InnerText(htmlquery.FindOne(pdiv, `./span/text()`))
 		// fmt.Println(phrasetext, phrasetrans)
 		phrases = append(phrases, Phrase{Word: text, Text: phrasetext, Trans: phrasetrans})
@@ -269,11 +275,10 @@ func (d EuDictClient) Guess(text string) (error, []GuessWord) {
 		v := guesses[i].Value
 		l = strings.Replace(l, "（", "(", -1)
 		l = strings.Replace(l, "）", ")", -1)
+		l = strings.Replace(l, "，", " ,", -1)
 		// l = strings.Replace(l, "...", "", -1)
 		guesses[i].Value = strings.TrimSpace(v)
 		guesses[i].Label = strings.TrimSpace(l)
-		// fmt.Println(l)
-		// fmt.Println(guesses[i].Label)
 	}
 	return nil, guesses
 }
