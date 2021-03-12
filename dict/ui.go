@@ -33,10 +33,21 @@ type transModel struct {
 
 func (m transModel) View() string {
 	var (
+		pronounce    string
 		transtext    string
 		phrasetext   string
 		sentencetext string
 	)
+
+	if m.word.Word.PronounceUS.Phonetic != "" {
+		pronounce += "US: " + m.word.Word.PronounceUS.Phonetic
+	}
+	if m.word.Word.PronounceUK.Phonetic != "" {
+		pronounce += "      UK: " + m.word.Word.PronounceUK.Phonetic
+	}
+	if pronounce != "" {
+		pronounce = "\n" + pronounce + "\n"
+	}
 
 	for _, t := range m.word.Word.Translates {
 		transtext += fmt.Sprintf("%s %s\n", ui.StyleMean(t.Mean), ui.StylePart(t.Part))
@@ -49,7 +60,8 @@ func (m transModel) View() string {
 	}
 
 	return strings.Join([]string{
-		"\n" + transtext,
+		pronounce,
+		transtext,
 		phrasetext,
 		sentencetext,
 	}, "\n")
@@ -198,7 +210,10 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.SetCursor(len(text))
 				cmds = append(cmds, Fetch(m.cli, text))
 			} else {
-				cmds = append(cmds, Fetch(m.cli, m.textInput.Value()))
+				text := m.textInput.Value()
+				if text != "" {
+					cmds = append(cmds, Fetch(m.cli, text))
+				}
 			}
 		case "esc":
 			m.textInput.Blur()

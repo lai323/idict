@@ -13,6 +13,7 @@ import (
 
 type Config struct {
 	StoragePath string `yaml:"StoragePath"`
+	// FfplayPath    string `yaml:"FfplayPath"`
 }
 
 var (
