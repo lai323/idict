@@ -185,6 +185,8 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "i", "backspace":
 			if !m.textInput.Focused() {
+				// 需要重置 viewport 因为联想内容和当前内容高度不同
+				m.viewport.GotoTop()
 				m.textInput.Focus()
 				return m, tea.Batch(cmds...)
 			}
