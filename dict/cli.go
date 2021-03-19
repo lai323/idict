@@ -11,11 +11,7 @@ import (
 )
 
 type Options struct {
-	RefreshInterval       *int
 	Text                  *string
-	Interactive           *bool
-	ExtraInfoExchange     *bool
-	ExtraInfoFundamentals *bool
 	ShowSummary           *bool
 	Proxy                 *string
 	Sort                  *string
@@ -46,9 +42,6 @@ func Run(config *idictconfig.Config, fs afero.Fs, options Options, uistarter fun
 }
 
 func mergeConfig(config idictconfig.Config, options Options) idictconfig.Config {
-	// config.RefreshInterval = idictconfig.GetRefreshInterval(*options.RefreshInterval, config.RefreshInterval)
-	// config.ExtraInfoExchange = idictconfig.GetBoolOption(*options.ExtraInfoExchange, config.ExtraInfoExchange)
-	// config.ExtraInfoFundamentals = idictconfig.GetBoolOption(*options.ExtraInfoFundamentals, config.ExtraInfoFundamentals)
 	// config.ShowSummary = idictconfig.GetBoolOption(*options.ShowSummary, config.ShowSummary)
 	// config.Sort = idictconfig.GetStringOption(*options.Sort, config.Sort)
 	return config

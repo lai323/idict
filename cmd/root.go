@@ -16,10 +16,6 @@ var (
 	configPath            string
 	storagePath           string
 	config                idictconfig.Config
-	refreshInterval       int
-	interactive           bool
-	extraInfoExchange     bool
-	extraInfoFundamentals bool
 	proxy                 string
 	showSummary           bool
 	sort                  string
@@ -31,10 +27,6 @@ var (
 			&config,
 			afero.NewOsFs(),
 			dict.Options{
-				RefreshInterval:       &refreshInterval,
-				Interactive:           &interactive,
-				ExtraInfoExchange:     &extraInfoExchange,
-				ExtraInfoFundamentals: &extraInfoFundamentals,
 				ShowSummary:           &showSummary,
 				Proxy:                 &proxy,
 				Sort:                  &sort,
@@ -49,10 +41,6 @@ var (
 			&config,
 			afero.NewOsFs(),
 			training.Options{
-				RefreshInterval:       &refreshInterval,
-				Interactive:           &interactive,
-				ExtraInfoExchange:     &extraInfoExchange,
-				ExtraInfoFundamentals: &extraInfoFundamentals,
 				ShowSummary:           &showSummary,
 				Proxy:                 &proxy,
 				Sort:                  &sort,
