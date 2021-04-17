@@ -257,18 +257,19 @@ func (d EuDictClient) Guess(text string) (error, []GuessWord) {
 	if text == "" {
 		return err, guesses
 	}
+	text = strings.TrimSpace(text)
 	resp, err := http.Get("https://dict.eudic.net/dicts/prefix/" + text)
 	if err != nil {
-		return utils.FmtErrorf("guess word error", err), guesses
+		return utils.FmtErrorf("guess word error http get", err), guesses
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return utils.FmtErrorf("guess word error", err), guesses
+		return utils.FmtErrorf("guess word error ioutil ReadAll", err), guesses
 	}
 	err = json.Unmarshal(body, &guesses)
 	if err != nil {
-		return utils.FmtErrorf("guess word error", err), guesses
+		return utils.FmtErrorf("guess word error json Unmarshal", err), guesses
 	}
 	for i := range guesses {
 		l := guesses[i].Label

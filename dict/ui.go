@@ -2,9 +2,11 @@ package dict
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -100,7 +102,53 @@ func (m guessModel) View() string {
 			)))
 	}
 	return strings.Join(wordtext, "\n")
+}
 
+type VoiceMsg struct {
+}
+
+type HelpMsg struct {
+}
+
+type HelpModel struct {
+	active bool
+}
+
+func (m HelpModel) View() string {
+	var text []string
+
+	var keyhelp = [][]string{
+		{"i", "active input"},
+		{"v", "voice"},
+		{"j", "up"},
+		{"k", "down"},
+		{"u", "page up"},
+		{"d", "page down"},
+		{"?", "back"},
+	}
+
+	text = append(text, "")
+	text = append(text, "")
+	for _, info := range keyhelp {
+		k, help := info[0], info[1]
+		text = append(text,
+			ui.Line(
+				40,
+				ui.Cell{
+					Width: 4,
+				},
+				ui.Cell{
+					Width: 6,
+					Align: ui.LeftAlign,
+					Text:  ui.StyleGuessText(k),
+				},
+				ui.Cell{
+					Align: ui.LeftAlign,
+					Text:  ui.StyleGuessTextSelect(help),
+				},
+			))
+	}
+	return strings.Join(text, "\n")
 }
 
 func Fetch(cli DictClient, text string) func() tea.Msg {
@@ -113,8 +161,9 @@ func Fetch(cli DictClient, text string) func() tea.Msg {
 	}
 }
 
-func initialDictModel(text string) DictModel {
+func initialDictModel(text string, config *idictconfig.Config) DictModel {
 	m := DictModel{}
+	m.config = config
 	m.cli = EuDictClient{}
 	m.text = text
 	m.textInput = textinput.NewModel()
@@ -142,10 +191,12 @@ type DictModel struct {
 	viewportContent string
 	transmodel      transModel
 	guessmodel      guessModel
+	helpmode        HelpModel
 	guessctx        context.Context
 	guessctxcancel  context.CancelFunc
 	guessdelay      int64
 	width           int
+	lastmodel       string
 }
 
 func (m DictModel) Init() tea.Cmd {
@@ -154,6 +205,18 @@ func (m DictModel) Init() tea.Cmd {
 	}
 	m.textInput.SetValue(m.text)
 	return tea.Batch(textinput.Blink, Fetch(m.cli, m.text))
+}
+
+func (m *DictModel) helpCmd() tea.Cmd {
+	return func() tea.Msg {
+		return HelpMsg{}
+	}
+}
+
+func (m *DictModel) voiceCmd() tea.Cmd {
+	return func() tea.Msg {
+		return VoiceMsg{}
+	}
 }
 
 func (m *DictModel) guessCmd() tea.Cmd {
@@ -235,6 +298,14 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateguess()
 			}
+		case "?":
+			if !m.textInput.Focused() {
+				cmds = append(cmds, m.helpCmd())
+			}
+		case "v":
+			if !m.textInput.Focused() {
+				cmds = append(cmds, m.voiceCmd())
+			}
 		}
 		if m.textInput.Focused() {
 			cmds = append(cmds, m.guessCmd())
@@ -255,12 +326,15 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.guessmodel.active = false
 		m.guessmodel.cursor = 0
 		m.transmodel.word = msg
-		m.viewportContent = m.transmodel.View()
-		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
+		m.updatetrans()
 	case GuessMsg:
 		m.guessmodel.words = msg
 		m.guessmodel.active = true
 		m.updateguess()
+	case HelpMsg:
+		m.updatehelp()
+	case VoiceMsg:
+		m.voice()
 	}
 
 	// Handle character input and blinks
@@ -275,8 +349,49 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *DictModel) voice() {
+	voicecmd := m.config.FfplayPath
+	voicearg := m.config.FfplayArgs
+	word := m.transmodel.word.Word.Text
+	if !(voicecmd != "" && word != "") {
+		return
+	}
+	text := "QYN" + base64.StdEncoding.EncodeToString([]byte(word))
+	url := `https://api.frdic.com/api/v2/speech/speakweb?langid=en&voicename=en_us_female&txt=` + text
+	voicearg = append(voicearg, url)
+	cmd := exec.Command(voicecmd, voicearg...)
+	cmd.Run()
+}
+
+func (m *DictModel) updatetrans() {
+	m.lastmodel = "trans"
+	m.viewportContent = m.transmodel.View()
+	m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
+}
+
 func (m *DictModel) updateguess() {
+	m.lastmodel = "guess"
 	m.viewportContent = m.guessmodel.View()
+	m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
+}
+
+func (m *DictModel) updatehelp() {
+	if m.helpmode.active {
+		m.helpmode.active = false
+		if m.lastmodel == "guess" {
+			m.updateguess()
+			return
+		}
+		if m.lastmodel == "trans" {
+			m.updatetrans()
+			return
+		}
+		m.viewportContent = ""
+		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
+		return
+	}
+	m.helpmode.active = true
+	m.viewportContent = m.helpmode.View()
 	m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 }
 
@@ -328,7 +443,7 @@ func footer(width int) string {
 
 func Start(config *idictconfig.Config) func(string) error {
 	return func(text string) error {
-		if err := tea.NewProgram(initialDictModel(text)).Start(); err != nil {
+		if err := tea.NewProgram(initialDictModel(text, config)).Start(); err != nil {
 			fmt.Printf("could not start program: %s\n", err)
 			os.Exit(1)
 		}

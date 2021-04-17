@@ -12,8 +12,9 @@ import (
 )
 
 type Config struct {
-	StoragePath string `yaml:"StoragePath"`
-	// FfplayPath    string `yaml:"FfplayPath"`
+	StoragePath string
+	FfplayPath  string
+	FfplayArgs  []string
 }
 
 var (
@@ -33,6 +34,8 @@ func init() {
 	DefaultStorageDir = path.Join(xdg.DataHome, "idict")
 	DefaultConfig = Config{
 		StoragePath: DefaultStorageDir,
+		// FfplayPath: "sh",
+		// FfplayArgs: []string{"/home/lai/.config/idict/ffplay.sh"},
 	}
 	err = createDefaultFile(afero.NewOsFs())
 	if err != nil {
