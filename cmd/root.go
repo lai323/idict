@@ -8,27 +8,27 @@ import (
 	idictconfig "github.com/lai323/idict/config"
 	"github.com/lai323/idict/dict"
 	"github.com/lai323/idict/practice"
+	"github.com/lai323/idict/wordset"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
 var (
-	configPath  string
-	storagePath string
-	config      idictconfig.Config
-	proxy       string
-	sort        string
-	rootCmd     = &cobra.Command{Use: "idict"}
-	transCmd    = &cobra.Command{
+	configPath    string
+	storagePath   string
+	wordSetImport string
+	wordSetList   bool
+	wordSetShow   string
+
+	config   idictconfig.Config
+	rootCmd  = &cobra.Command{Use: "idict"}
+	transCmd = &cobra.Command{
 		Use:   "trans",
 		Short: "translate one word or sentence",
 		RunE: dict.Run(
 			&config,
 			afero.NewOsFs(),
-			dict.Options{
-				Proxy: &proxy,
-				Sort:  &sort,
-			},
+			dict.Options{},
 			dict.Start(&config)),
 	}
 
@@ -38,24 +38,20 @@ var (
 		RunE: practice.Run(
 			&config,
 			afero.NewOsFs(),
-			practice.Options{
-				Proxy: &proxy,
-				Sort:  &sort,
-			},
+			practice.Options{},
 			dict.Start(&config)),
 	}
 
-	importCmd = &cobra.Command{
-		Use:   "import",
-		Short: "import work to practice",
-		RunE: practice.Import(
+	wordCmd = &cobra.Command{
+		Use:   "word",
+		Short: "manage word set",
+		RunE: wordset.Import(
 			&config,
 			afero.NewOsFs(),
-			practice.Options{
-				Proxy: &proxy,
-				Sort:  &sort,
-			},
-			dict.Start(&config)),
+			wordSetImport,
+			wordSetList,
+			wordSetShow,
+		),
 	}
 )
 
@@ -70,8 +66,14 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", fmt.Sprintf("config file (default is %s)", idictconfig.DefaultConfigPath))
 	rootCmd.PersistentFlags().StringVar(&storagePath, "storage", "", fmt.Sprintf("storage dir (default is %s)", idictconfig.DefaultStorageDir))
-	rootCmd.AddCommand(practiceCmd)
+
+	wordCmd.PersistentFlags().StringVar(&wordSetImport, "import", "", "import word set file path")
+	wordCmd.PersistentFlags().BoolVar(&wordSetList, "lish", false, "list all word set")
+	wordCmd.PersistentFlags().StringVar(&wordSetShow, "show", "", "show word set info")
+
 	rootCmd.AddCommand(transCmd)
+	rootCmd.AddCommand(wordCmd)
+	rootCmd.AddCommand(practiceCmd)
 }
 
 func initConfig() {

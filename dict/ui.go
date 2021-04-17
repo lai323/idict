@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	idictconfig "github.com/lai323/idict/config"
 	"github.com/lai323/idict/ui"
+	"github.com/lai323/idict/wordset"
 	"github.com/muesli/reflow/wordwrap"
 	te "github.com/muesli/termenv"
 )
@@ -24,9 +25,7 @@ var (
 )
 
 type WordMsg struct {
-	Word      Word
-	Phrases   []Phrase
-	Sentences []Sentence
+	wordset.Word
 }
 
 type transModel struct {
@@ -70,7 +69,7 @@ func (m transModel) View() string {
 }
 
 type GuessMsg struct {
-	words []GuessWord
+	words []wordset.GuessWord
 }
 
 type guessModel struct {
@@ -119,7 +118,7 @@ func (m HelpModel) View() string {
 
 	var keyhelp = [][]string{
 		{"i", "active input"},
-		{"v", "voice"},
+		{"v", "voice (if ffplay has been set)"},
 		{"j", "up"},
 		{"k", "down"},
 		{"u", "page up"},
@@ -140,31 +139,25 @@ func (m HelpModel) View() string {
 				ui.Cell{
 					Width: 6,
 					Align: ui.LeftAlign,
-					Text:  ui.StyleGuessText(k),
+					Text:  ui.StyleKey(k),
 				},
 				ui.Cell{
 					Align: ui.LeftAlign,
-					Text:  ui.StyleGuessTextSelect(help),
+					Text:  ui.StyleKeyHelp(help),
 				},
 			))
 	}
 	return strings.Join(text, "\n")
 }
 
-func Fetch(cli DictClient, text string) func() tea.Msg {
-	return func() tea.Msg {
-		err, word, phrases, sentences := cli.Fetch(text)
-		if err != nil {
-			panic(fmt.Errorf("fetch translate word error: %s", err.Error()))
-		}
-		return WordMsg{Word: word, Phrases: phrases, Sentences: sentences}
+func initialDictModel(text string, config *idictconfig.Config) (DictModel, error) {
+	m := DictModel{config: config}
+	cli, err := NewEuDictClient(*config)
+	if err != nil {
+		return m, err
 	}
-}
-
-func initialDictModel(text string, config *idictconfig.Config) DictModel {
-	m := DictModel{}
 	m.config = config
-	m.cli = EuDictClient{}
+	m.cli = cli
 	m.text = text
 	m.textInput = textinput.NewModel()
 	m.textInput.Placeholder = "Type to input"
@@ -177,7 +170,7 @@ func initialDictModel(text string, config *idictconfig.Config) DictModel {
 	m.textInput.SetCursor(len(text))
 	m.guessctx = context.Background()
 	m.guessdelay = 300
-	return m
+	return m, nil
 }
 
 type DictModel struct {
@@ -204,7 +197,17 @@ func (m DictModel) Init() tea.Cmd {
 		return textinput.Blink
 	}
 	m.textInput.SetValue(m.text)
-	return tea.Batch(textinput.Blink, Fetch(m.cli, m.text))
+	return tea.Batch(textinput.Blink, m.fetchCmd(m.text))
+}
+
+func (m *DictModel) fetchCmd(text string) func() tea.Msg {
+	return func() tea.Msg {
+		err, word := m.cli.FetchCache(text)
+		if err != nil {
+			panic(fmt.Errorf("fetch translate word error: %s", err.Error()))
+		}
+		return WordMsg{word}
+	}
 }
 
 func (m *DictModel) helpCmd() tea.Cmd {
@@ -271,11 +274,11 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				text := m.guessmodel.words.words[m.guessmodel.cursor-1].Value
 				m.textInput.SetValue(text)
 				m.textInput.SetCursor(len(text))
-				cmds = append(cmds, Fetch(m.cli, text))
+				cmds = append(cmds, m.fetchCmd(text))
 			} else {
 				text := m.textInput.Value()
 				if text != "" {
-					cmds = append(cmds, Fetch(m.cli, text))
+					cmds = append(cmds, m.fetchCmd(text))
 				}
 			}
 		case "esc":
@@ -443,7 +446,12 @@ func footer(width int) string {
 
 func Start(config *idictconfig.Config) func(string) error {
 	return func(text string) error {
-		if err := tea.NewProgram(initialDictModel(text, config)).Start(); err != nil {
+		m, err := initialDictModel(text, config)
+		if err != nil {
+			fmt.Printf("could not start program: %s\n", err)
+			os.Exit(1)
+		}
+		if err := tea.NewProgram(m).Start(); err != nil {
 			fmt.Printf("could not start program: %s\n", err)
 			os.Exit(1)
 		}

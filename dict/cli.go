@@ -11,9 +11,7 @@ import (
 )
 
 type Options struct {
-	Text  *string
-	Proxy *string
-	Sort  *string
+	Text *string
 }
 
 func Run(config *idictconfig.Config, fs afero.Fs, options Options, uistarter func(string) error) func(*cobra.Command, []string) error {

@@ -15,8 +15,8 @@ func TestEuDictGuess(t *testing.T) {
 
 func TestEuDictFetch(t *testing.T) {
 	cli := EuDictClient{}
-	err, word, phrases, sentences := cli.Fetch("guess")
-	fmt.Println(err, word, phrases, sentences)
+	err, word := cli.Fetch("guess")
+	fmt.Println(err, word)
 }
 
 func TestEuquerySentence(t *testing.T) {

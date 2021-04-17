@@ -13,6 +13,8 @@ var (
 	StyleSentencesText   = NewStyle("#B9BFCA", "", false, false)
 	StyleGuessText       = NewStyle("#D290E4", "", false, false)
 	StyleGuessTextSelect = NewStyle("#ff5faf", "", true, false)
+	StyleKey             = NewStyle("#71BEF2", "", true, false)
+	StyleKeyHelp         = NewStyle("#B9BFCA", "", false, false)
 )
 
 const (
