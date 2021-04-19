@@ -19,6 +19,7 @@ var (
 	wordSetImport string
 	wordSetList   bool
 	wordSetShow   string
+	wordDel       string
 
 	config   idictconfig.Config
 	rootCmd  = &cobra.Command{Use: "idict"}
@@ -45,12 +46,13 @@ var (
 	wordCmd = &cobra.Command{
 		Use:   "word",
 		Short: "manage word set",
-		RunE: wordset.Import(
+		RunE: wordset.Start(
 			&config,
 			afero.NewOsFs(),
-			wordSetImport,
-			wordSetList,
-			wordSetShow,
+			&wordSetImport,
+			&wordSetList,
+			&wordSetShow,
+			&wordDel,
 		),
 	}
 )
@@ -68,8 +70,9 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&storagePath, "storage", "", fmt.Sprintf("storage dir (default is %s)", idictconfig.DefaultStorageDir))
 
 	wordCmd.PersistentFlags().StringVar(&wordSetImport, "import", "", "import word set file path")
-	wordCmd.PersistentFlags().BoolVar(&wordSetList, "lish", false, "list all word set")
+	wordCmd.PersistentFlags().BoolVar(&wordSetList, "list", false, "list all word set")
 	wordCmd.PersistentFlags().StringVar(&wordSetShow, "show", "", "show word set info")
+	wordCmd.PersistentFlags().StringVar(&wordDel, "del", "", "delete word set")
 
 	rootCmd.AddCommand(transCmd)
 	rootCmd.AddCommand(wordCmd)

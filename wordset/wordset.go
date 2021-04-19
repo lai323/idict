@@ -77,7 +77,7 @@ func (ws *WordSet) Append(word string) error {
 	return ws.Save(true)
 }
 
-var validword = regexp.MustCompile(`^[a-z]+[a-z]$`)
+var validword = regexp.MustCompile(`^[A-Za-z]+[A-Za-z]$`)
 
 func (ws *WordSet) Load() error {
 	exist, err := ws.Exist()
@@ -113,13 +113,12 @@ func (m WordSetManage) WordSetDir() string {
 }
 
 func (m WordSetManage) Import(p string) error {
-	dir := path.Dir(p)
 	name := strings.Split(path.Base(p), ".")[0]
 	if name == "/" {
 		return fmt.Errorf("invalid word set path %s ", name)
 	}
 
-	ws, err := NewWordSet(name, dir)
+	ws, err := NewWordSet(name, m.WordSetDir())
 	if err != nil {
 		return err
 	}
@@ -127,17 +126,49 @@ func (m WordSetManage) Import(p string) error {
 	if err != nil {
 		return err
 	}
-	ws.StorageDir = m.WordSetDir()
-	return ws.Save(false)
+
+	filebyte, err := ioutil.ReadFile(p)
+	if err != nil {
+		return fmt.Errorf("read file %s %s", p, err.Error())
+	}
+
+	for _, wordline := range strings.Split(string(filebyte), "\n") {
+		word := strings.TrimSpace(wordline)
+		if wordline == "" {
+			continue
+		}
+		if !validword.MatchString(word) {
+			return fmt.Errorf("WordSet Load invalid word '%s'", word)
+		}
+		ws.Words[word] = 0
+	}
+
+	return ws.Save(true)
 }
 
-func (m WordSetManage) List(p string) error {
+func (m WordSetManage) Del(name string) error {
+	ws, err := NewWordSet(name, m.WordSetDir())
+	if err != nil {
+		return err
+	}
+
+	exist, err := ws.Exist()
+	if err != nil {
+		return err
+	}
+	if !exist {
+		return fmt.Errorf("WrodSet %s not exist", name)
+	}
+	return os.Remove(ws.fileName())
+}
+
+func (m WordSetManage) List() error {
 	files, err := ioutil.ReadDir(m.WordSetDir())
 	if err != nil {
 		return err
 	}
 	for _, f := range files {
-		fmt.Println("    ", strings.Split(path.Base(f.Name()), ".")[0])
+		fmt.Println(strings.Split(path.Base(f.Name()), ".")[0])
 	}
 	return nil
 }

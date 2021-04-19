@@ -16,7 +16,6 @@ import (
 
 	"github.com/antchfx/htmlquery"
 	"github.com/lai323/idict/config"
-	"github.com/lai323/idict/utils"
 	"github.com/lai323/idict/wordset"
 	"github.com/muesli/termenv"
 	"golang.org/x/net/html"
@@ -266,16 +265,22 @@ func (d EuDictClient) Guess(text string) (error, []wordset.GuessWord) {
 	text = strings.TrimSpace(text)
 	resp, err := http.Get("https://dict.eudic.net/dicts/prefix/" + text)
 	if err != nil {
-		return utils.FmtErrorf("guess word error http get", err), guesses
+		// 忽略这个异常
+		// return utils.FmtErrorf("guess word error http get", err), guesses
+		return nil, guesses
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return utils.FmtErrorf("guess word error ioutil ReadAll", err), guesses
+		// 忽略这个异常
+		// return utils.FmtErrorf("guess word error ioutil ReadAll", err), guesses
+		return nil, guesses
 	}
 	err = json.Unmarshal(body, &guesses)
 	if err != nil {
-		return utils.FmtErrorf("guess word error json Unmarshal", err), guesses
+		// 忽略这个异常
+		// return utils.FmtErrorf("guess word error json Unmarshal", err), guesses
+		return nil, guesses
 	}
 	for i := range guesses {
 		l := guesses[i].Label

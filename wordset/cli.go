@@ -6,17 +6,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func Import(config *idictconfig.Config, fs afero.Fs, wordSetImport string, wordSetList bool, wordSetShow string) func(*cobra.Command, []string) error {
+func Start(config *idictconfig.Config, fs afero.Fs, wordSetImport *string, wordSetList *bool, wordSetShow *string, wordDel *string) func(*cobra.Command, []string) error {
 
 	return func(cmd *cobra.Command, args []string) error {
-		if wordSetList {
-			return nil
+		if *wordSetList {
+			return WordSetManage{StoragePath: config.StoragePath}.List()
 		}
-		if wordSetShow != "" {
-			return nil
+		if *wordSetShow != "" {
+			return WordSetManage{StoragePath: config.StoragePath}.Show(*wordSetShow)
 		}
-		if wordSetImport != "" {
-			return nil
+		if *wordSetImport != "" {
+			return WordSetManage{StoragePath: config.StoragePath}.Import(*wordSetImport)
+		}
+		if *wordDel != "" {
+			return WordSetManage{StoragePath: config.StoragePath}.Del(*wordDel)
 		}
 		cmd.Help()
 		return nil

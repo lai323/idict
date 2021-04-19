@@ -169,7 +169,7 @@ func initialDictModel(text string, config *idictconfig.Config) (DictModel, error
 	m.textInput.SetValue(text)
 	m.textInput.SetCursor(len(text))
 	m.guessctx = context.Background()
-	m.guessdelay = 300
+	m.guessdelay = 500
 	return m, nil
 }
 
