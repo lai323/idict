@@ -331,9 +331,11 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.transmodel.word = msg
 		m.updatetrans()
 	case GuessMsg:
-		m.guessmodel.words = msg
-		m.guessmodel.active = true
-		m.updateguess()
+		if m.textInput.Focused() {
+			m.guessmodel.words = msg
+			m.guessmodel.active = true
+			m.updateguess()
+		}
 	case HelpMsg:
 		m.updatehelp()
 	case VoiceMsg:
