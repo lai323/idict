@@ -16,44 +16,19 @@ type Options struct {
 func Run(config *idictconfig.Config, fs afero.Fs, options Options, uistarter func(string) error) func(*cobra.Command, []string) error {
 
 	return func(cmd *cobra.Command, args []string) error {
-		var text string
-		// 验证 options, config, args; 合并 config
+		worset := "default"
 		if len(args) > 1 {
-			return errors.New("Only one word or sentence can be translated at a time")
+			return errors.New("Only one wordset can to practice")
 		}
 		if len(args) == 1 {
-			text = args[0]
+			worset = args[0]
 		}
 		if config.StoragePath == "" {
 			return errors.New("StoragePath empty")
 		}
 		*config = mergeConfig(*config, options)
 
-		err := uistarter(text)
-		if err != nil {
-			return fmt.Errorf("Unable to start UI: %w", err)
-		}
-		return nil
-	}
-}
-
-func Import(config *idictconfig.Config, fs afero.Fs, options Options, uistarter func(string) error) func(*cobra.Command, []string) error {
-
-	return func(cmd *cobra.Command, args []string) error {
-		var text string
-		// 验证 options, config, args; 合并 config
-		if len(args) > 1 {
-			return errors.New("Only one word or sentence can be translated at a time")
-		}
-		if len(args) == 1 {
-			text = args[0]
-		}
-		if config.StoragePath == "" {
-			return errors.New("StoragePath empty")
-		}
-		*config = mergeConfig(*config, options)
-
-		err := uistarter(text)
+		err := uistarter(worset)
 		if err != nil {
 			return fmt.Errorf("Unable to start UI: %w", err)
 		}

@@ -63,6 +63,8 @@ func (ws WordSet) Save(force bool) error {
 
 	w := bufio.NewWriter(f)
 	for word := range ws.Words {
+		word = strings.TrimSpace(word)
+		word = strings.ToLower(word)
 		_, err := w.WriteString(word + "\n")
 		if err != nil {
 			return err

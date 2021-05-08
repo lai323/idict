@@ -40,7 +40,7 @@ var (
 			&config,
 			afero.NewOsFs(),
 			practice.Options{},
-			dict.Start(&config)),
+			practice.Start(&config)),
 	}
 
 	wordCmd = &cobra.Command{

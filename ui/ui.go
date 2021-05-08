@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"log"
+	"fmt"
 	"math"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/muesli/reflow/ansi"
@@ -107,20 +107,36 @@ func Truncate(old string, n int) string {
 	return old
 }
 
-func logfile(v ...interface{}) {
-	f, err := os.OpenFile("testlogfile", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
-	}
-	defer f.Close()
-
-	log.SetOutput(f)
-	log.Println(v...)
-}
-
 func JoinLines(texts ...string) string {
 	return strings.Join(
 		texts,
 		"\n",
+	)
+}
+
+func Footer(width int) string {
+
+	if width < 80 {
+		return StyleLogo(" idict ")
+	}
+
+	t := time.Now()
+	tstr := fmt.Sprintf("%s %02d:%02d:%02d", t.Weekday().String(), t.Hour(), t.Minute(), t.Second())
+
+	return Line(
+		width,
+		// Cell{
+		// 	Width: 10,
+		// 	Text:  StyleLogo(" idict "),
+		// },
+		Cell{
+			Width: 50,
+			Text:  StyleHelp("ctrl+c:exit | ?:more help"),
+		},
+		Cell{
+			// Text:  StyleHelp("⟳  " + tstr),
+			Text:  StyleHelp(tstr),
+			Align: RightAlign,
+		},
 	)
 }

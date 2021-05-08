@@ -12,9 +12,11 @@ import (
 )
 
 type Config struct {
-	StoragePath string
-	FfplayPath  string
-	FfplayArgs  []string
+	StoragePath     string
+	FfplayPath      string
+	FfplayArgs      []string
+	GroupNum        int
+	RestudyInterval map[int]int
 }
 
 var (
@@ -34,6 +36,16 @@ func init() {
 	DefaultStorageDir = path.Join(xdg.DataHome, "idict")
 	DefaultConfig = Config{
 		StoragePath: DefaultStorageDir,
+		GroupNum:    20,
+		RestudyInterval: map[int]int{
+			3:  0,
+			5:  12,
+			8:  36,
+			12: 72,
+			17: 120,
+			23: 240,
+			26: -1,
+		},
 		// FfplayPath: "sh",
 		// FfplayArgs: []string{"/home/lai/.config/idict/ffplay.sh"},
 	}

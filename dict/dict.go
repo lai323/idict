@@ -104,7 +104,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		return err, word
 	}
 
-	word.Text = text
+	word.Text = strings.TrimSpace(strings.ToLower(text))
 	resp, err := euquery(text)
 	if err != nil {
 		return err, word

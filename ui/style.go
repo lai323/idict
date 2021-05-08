@@ -15,6 +15,9 @@ var (
 	StyleGuessTextSelect = NewStyle("#ff5faf", "", true, false)
 	StyleKey             = NewStyle("#71BEF2", "", true, false)
 	StyleKeyHelp         = NewStyle("#B9BFCA", "", false, false)
+	StyleSuccess         = NewStyle("#67f86f", "", true, false)
+	Stylefail            = NewStyle("#fd6f59", "", true, false)
+	StyleWordCount       = NewStyle("#aeaeae", "", true, false)
 )
 
 const (

@@ -24,50 +24,6 @@ var (
 	focusedPrompt = te.String(": ").Foreground(te.ColorProfile().Color("205")).String()
 )
 
-type WordMsg struct {
-	wordset.Word
-}
-
-type transModel struct {
-	word WordMsg
-}
-
-func (m transModel) View() string {
-	var (
-		pronounce    string
-		transtext    string
-		phrasetext   string
-		sentencetext string
-	)
-
-	if m.word.Word.PronounceUS.Phonetic != "" {
-		pronounce += "US: " + m.word.Word.PronounceUS.Phonetic
-	}
-	if m.word.Word.PronounceUK.Phonetic != "" {
-		pronounce += "      UK: " + m.word.Word.PronounceUK.Phonetic
-	}
-	if pronounce != "" {
-		pronounce = "\n" + pronounce + "\n"
-	}
-
-	for _, t := range m.word.Word.Translates {
-		transtext += fmt.Sprintf("%s %s\n", ui.StyleMean(t.Mean), ui.StylePart(t.Part))
-	}
-	for _, p := range m.word.Phrases {
-		phrasetext += fmt.Sprintf("%s: %s\n", ui.StylePhrasesText(p.Text), p.Trans)
-	}
-	for _, s := range m.word.Sentences {
-		sentencetext += fmt.Sprintf("%s: \n    %s\n", ui.StyleSentencesText(s.Text), s.Trans)
-	}
-
-	return strings.Join([]string{
-		pronounce,
-		transtext,
-		phrasetext,
-		sentencetext,
-	}, "\n")
-}
-
 type GuessMsg struct {
 	words []wordset.GuessWord
 }
@@ -106,50 +62,6 @@ func (m guessModel) View() string {
 type VoiceMsg struct {
 }
 
-type HelpMsg struct {
-}
-
-type HelpModel struct {
-	active bool
-}
-
-func (m HelpModel) View() string {
-	var text []string
-
-	var keyhelp = [][]string{
-		{"i", "active input"},
-		{"v", "voice (if ffplay has been set)"},
-		{"j", "up"},
-		{"k", "down"},
-		{"u", "page up"},
-		{"d", "page down"},
-		{"?", "back"},
-	}
-
-	text = append(text, "")
-	text = append(text, "")
-	for _, info := range keyhelp {
-		k, help := info[0], info[1]
-		text = append(text,
-			ui.Line(
-				40,
-				ui.Cell{
-					Width: 4,
-				},
-				ui.Cell{
-					Width: 6,
-					Align: ui.LeftAlign,
-					Text:  ui.StyleKey(k),
-				},
-				ui.Cell{
-					Align: ui.LeftAlign,
-					Text:  ui.StyleKeyHelp(help),
-				},
-			))
-	}
-	return strings.Join(text, "\n")
-}
-
 func initialDictModel(text string, config *idictconfig.Config) (DictModel, error) {
 	m := DictModel{config: config}
 	cli, err := NewEuDictClient(*config)
@@ -170,6 +82,18 @@ func initialDictModel(text string, config *idictconfig.Config) (DictModel, error
 	m.textInput.SetCursor(len(text))
 	m.guessctx = context.Background()
 	m.guessdelay = 500
+
+	m.helpmode = ui.HelpModel{
+		Keyhelp: [][]string{
+			{"?", "back"},
+			{"i", "active input"},
+			{"v", "voice (if ffplay has been set)"},
+			{"j", "up"},
+			{"k", "down"},
+			{"u", "page up"},
+			{"d", "page down"},
+		},
+	}
 	return m, nil
 }
 
@@ -182,9 +106,9 @@ type DictModel struct {
 	lastinputat     int64
 	viewport        viewport.Model
 	viewportContent string
-	transmodel      transModel
+	transmodel      ui.TransModel
 	guessmodel      guessModel
-	helpmode        HelpModel
+	helpmode        ui.HelpModel
 	guessctx        context.Context
 	guessctxcancel  context.CancelFunc
 	guessdelay      int64
@@ -206,18 +130,30 @@ func (m *DictModel) fetchCmd(text string) func() tea.Msg {
 		if err != nil {
 			panic(fmt.Errorf("fetch translate word error: %s", err.Error()))
 		}
-		return WordMsg{word}
+		return ui.WordMsg{word}
 	}
 }
 
 func (m *DictModel) helpCmd() tea.Cmd {
 	return func() tea.Msg {
-		return HelpMsg{}
+		return ui.HelpMsg{}
 	}
 }
 
 func (m *DictModel) voiceCmd() tea.Cmd {
+	voicecmd := m.config.FfplayPath
+	voicearg := m.config.FfplayArgs
+	word := m.transmodel.Word.Text
+	if !(voicecmd != "" && word != "") {
+		return nil
+	}
+
 	return func() tea.Msg {
+		text := "QYN" + base64.StdEncoding.EncodeToString([]byte(word))
+		url := `https://api.frdic.com/api/v2/speech/speakweb?langid=en&voicename=en_us_female&txt=` + text
+		voicearg = append(voicearg, url)
+		cmd := exec.Command(voicecmd, voicearg...)
+		cmd.Run()
 		return VoiceMsg{}
 	}
 }
@@ -307,7 +243,10 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "v":
 			if !m.textInput.Focused() {
-				cmds = append(cmds, m.voiceCmd())
+				cmd := m.voiceCmd()
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 		if m.textInput.Focused() {
@@ -325,10 +264,10 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = viewportHeight
 		}
 		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
-	case WordMsg:
+	case ui.WordMsg:
 		m.guessmodel.active = false
 		m.guessmodel.cursor = 0
-		m.transmodel.word = msg
+		m.transmodel.Word = msg.Word
 		m.updatetrans()
 	case GuessMsg:
 		if m.textInput.Focused() {
@@ -336,10 +275,9 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.guessmodel.active = true
 			m.updateguess()
 		}
-	case HelpMsg:
+	case ui.HelpMsg:
 		m.updatehelp()
 	case VoiceMsg:
-		m.voice()
 	}
 
 	// Handle character input and blinks
@@ -352,20 +290,6 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
-}
-
-func (m *DictModel) voice() {
-	voicecmd := m.config.FfplayPath
-	voicearg := m.config.FfplayArgs
-	word := m.transmodel.word.Word.Text
-	if !(voicecmd != "" && word != "") {
-		return
-	}
-	text := "QYN" + base64.StdEncoding.EncodeToString([]byte(word))
-	url := `https://api.frdic.com/api/v2/speech/speakweb?langid=en&voicename=en_us_female&txt=` + text
-	voicearg = append(voicearg, url)
-	cmd := exec.Command(voicecmd, voicearg...)
-	cmd.Run()
 }
 
 func (m *DictModel) updatetrans() {
@@ -381,8 +305,8 @@ func (m *DictModel) updateguess() {
 }
 
 func (m *DictModel) updatehelp() {
-	if m.helpmode.active {
-		m.helpmode.active = false
+	if m.helpmode.Active {
+		m.helpmode.Active = false
 		if m.lastmodel == "guess" {
 			m.updateguess()
 			return
@@ -395,7 +319,7 @@ func (m *DictModel) updatehelp() {
 		m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 		return
 	}
-	m.helpmode.active = true
+	m.helpmode.Active = true
 	m.viewportContent = m.helpmode.View()
 	m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 }
@@ -412,38 +336,10 @@ func (m DictModel) View() string {
 		[]string{
 			m.textInput.View(), "\n",
 			m.viewport.View(), "\n",
-			footer(m.viewport.Width),
+			ui.Footer(m.viewport.Width),
 		},
 		"",
 	)
-}
-
-func footer(width int) string {
-
-	if width < 80 {
-		return ui.StyleLogo(" idict ")
-	}
-
-	t := time.Now()
-	tstr := fmt.Sprintf("%s %02d:%02d:%02d", t.Weekday().String(), t.Hour(), t.Minute(), t.Second())
-
-	return ui.Line(
-		width,
-		ui.Cell{
-			Width: 10,
-			Text:  ui.StyleLogo(" idict "),
-		},
-		ui.Cell{
-			Width: 50,
-			Text:  ui.StyleHelp("ctrl+c:exit | ?:more help"),
-		},
-		ui.Cell{
-			// Text:  ui.StyleHelp("⟳  " + tstr),
-			Text:  ui.StyleHelp(tstr),
-			Align: ui.RightAlign,
-		},
-	)
-
 }
 
 func Start(config *idictconfig.Config) func(string) error {
