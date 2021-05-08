@@ -18,6 +18,7 @@ import (
 	idictconfig "github.com/lai323/idict/config"
 	"github.com/lai323/idict/dict"
 	"github.com/lai323/idict/ui"
+	"github.com/lai323/idict/utils"
 	"github.com/lai323/idict/wordset"
 	"github.com/muesli/reflow/wordwrap"
 )
@@ -192,13 +193,12 @@ func (m *PracModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "i", "backspace":
-			if !m.textInput.Focused() {
+			if !m.textInput.Focused() && m.successed != true {
 				// 需要重置 viewport 因为联想内容和当前内容高度不同
 				m.viewport.GotoTop()
 				m.textInput.Focus()
 				return m, tea.Batch(cmds...)
 			}
-			m.successed = false
 			m.failed = false
 		case "enter":
 			if m.successed != true {
@@ -218,9 +218,6 @@ func (m *PracModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.textInput.Focused() {
 				cmds = append(cmds, m.helpCmd())
 			}
-		default:
-			m.successed = false
-			m.failed = false
 		}
 
 	case tea.WindowSizeMsg:
@@ -238,8 +235,8 @@ func (m *PracModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updatehelp()
 	case NextMsg:
 		m.successed = false
-		m.answertext = ""
 		m.failed = false
+		m.answertext = ""
 		m.currentWord = msg.word
 		m.sencursor = 0
 		m.showAnswer = false
@@ -313,6 +310,14 @@ func (m *PracModel) PracView() string {
 
 	wordtrans := ""
 	for _, t := range m.currentWord.Translates {
+		// 有时候翻译中会有这个单词的其他时态，检查一下避免显示答案
+		transtext := strings.ToLower(utils.SpaceMap(t.Mean + t.Part))
+		if strings.Contains(transtext, m.currentWord.Text) {
+			continue
+		}
+		if strings.Contains(transtext, "时态") {
+			continue
+		}
 		wordtrans += fmt.Sprintf("%s %s\n", ui.StyleMean(t.Mean), ui.StylePart(t.Part))
 	}
 

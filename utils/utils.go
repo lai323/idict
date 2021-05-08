@@ -3,6 +3,8 @@ package utils
 import (
 	"bytes"
 	"fmt"
+	"strings"
+	"unicode"
 
 	"golang.org/x/net/html"
 )
@@ -31,4 +33,13 @@ func InnerTextWithOutChild(n *html.Node) string {
 	var buf bytes.Buffer
 	output(&buf, n)
 	return buf.String()
+}
+
+func SpaceMap(str string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, str)
 }
