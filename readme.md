@@ -4,7 +4,11 @@
 - 英文到中文的翻译查询
 - 类似多邻国的单词记忆练习
 
-##### 配置
+#### 演示
+![translate](./img/translate.gif)
+![practice 属性文本](./img/practice.gif)
+
+#### 配置
 
 配置文件默认位置：`~/.config/idict/idict.yaml`
 

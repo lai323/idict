@@ -218,6 +218,8 @@ func (m *PracModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.textInput.Focused() {
 				cmds = append(cmds, m.helpCmd())
 			}
+		default:
+			m.failed = false
 		}
 
 	case tea.WindowSizeMsg:
@@ -236,6 +238,7 @@ func (m *PracModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NextMsg:
 		m.successed = false
 		m.failed = false
+		m.textInput.Focus()
 		m.answertext = ""
 		m.currentWord = msg.word
 		m.sencursor = 0
@@ -260,6 +263,7 @@ func (m *PracModel) answer() {
 	m.answertext = strings.TrimSpace(strings.ToLower(m.textInput.Value()))
 	if m.answertext == strings.ToLower(m.currentWord.Text) {
 		m.successed = true
+		m.textInput.Blur()
 		m.batchWord = m.batchWord[1:]
 		err := m.pracExtent.Remember(m.currentWord.Text)
 		if err != nil {
