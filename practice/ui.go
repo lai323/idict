@@ -337,11 +337,9 @@ func (m *PracModel) PracView() string {
 		senslice := strings.Split(strings.ToLower(sen.Text), strings.ToLower(sen.Word))
 		if len(senslice) > 1 {
 			endstr = strings.Join(senslice[1:], sen.Word)
+			startstr = senslice[0] + " "
+			transtr = sen.Trans
 		}
-		startstr = senslice[0] + " "
-		transtr = sen.Trans
-	} else {
-		startstr = ""
 	}
 
 	transtr = transtr + "\n\n\n\n" + wordtrans

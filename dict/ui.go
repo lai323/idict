@@ -92,6 +92,8 @@ func initialDictModel(text string, config *idictconfig.Config) (DictModel, error
 			{"k", "down"},
 			{"u", "page up"},
 			{"d", "page down"},
+			{"ctrl+u", "clean input"},
+			{"ctrl+c", "quit"},
 		},
 	}
 	return m, nil
@@ -130,7 +132,7 @@ func (m *DictModel) fetchCmd(text string) func() tea.Msg {
 		if err != nil {
 			panic(fmt.Errorf("fetch translate word error: %s", err.Error()))
 		}
-		return ui.WordMsg{word}
+		return ui.WordMsg{Word: word}
 	}
 }
 
@@ -202,6 +204,14 @@ func (m DictModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// 需要重置 viewport 因为联想内容和当前内容高度不同
 				m.viewport.GotoTop()
 				m.textInput.Focus()
+				return m, tea.Batch(cmds...)
+			}
+		case "ctrl+u":
+			if !m.textInput.Focused() {
+				// 需要重置 viewport 因为联想内容和当前内容高度不同
+				m.viewport.GotoTop()
+				m.textInput.Focus()
+				m.textInput.SetValue("")
 				return m, tea.Batch(cmds...)
 			}
 		case "enter":
