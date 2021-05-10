@@ -79,7 +79,7 @@ func (ws *WordSet) Append(word string) error {
 	return ws.Save(true)
 }
 
-var validword = regexp.MustCompile(`^[A-Za-z]+[A-Za-z]$`)
+var validword = regexp.MustCompile(`^[A-Za-z-]+[A-Za-z-\.']*$`)
 
 func (ws *WordSet) Load() error {
 	exist, err := ws.Exist()
