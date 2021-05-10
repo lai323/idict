@@ -67,7 +67,7 @@ func (d EuDictClient) FetchCache(text string) (error, wordset.Word) {
 		return err, word
 	}
 	if exist {
-		if word.PronounceUS.Phonetic != "" {
+		if word.PronounceUS.Phonetic != "" || word.PronounceUK.Phonetic != "" {
 			err = d.defaultWordset.Append(word.Text)
 			if err != nil {
 				return err, word
@@ -80,7 +80,7 @@ func (d EuDictClient) FetchCache(text string) (error, wordset.Word) {
 	if err != nil {
 		return err, word
 	}
-	if word.PronounceUS.Phonetic != "" {
+	if word.PronounceUS.Phonetic != "" || word.PronounceUK.Phonetic != "" {
 		err = d.wordcache.Set(word)
 		if err != nil {
 			return err, word
