@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/adrg/xdg v0.3.0
 	github.com/antchfx/htmlquery v1.2.3
+	github.com/boltdb/bolt v1.3.1
 	github.com/charmbracelet/bubbles v0.7.6
 	github.com/charmbracelet/bubbletea v0.12.4
 	github.com/mattn/go-runewidth v0.0.10

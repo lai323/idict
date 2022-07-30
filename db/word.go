@@ -1,4 +1,4 @@
-package wordset
+package db
 
 type Translate struct {
 	Part string
@@ -35,4 +35,10 @@ type Word struct {
 	Translates  []Translate
 	Phrases     []Phrase
 	Sentences   []Sentence
+}
+
+type WordPractice struct {
+	Text     string
+	Degree   int
+	LastTime int64
 }

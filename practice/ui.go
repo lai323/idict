@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -15,71 +14,67 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	idictconfig "github.com/lai323/idict/config"
+	"github.com/lai323/idict/config"
+	"github.com/lai323/idict/db"
 	"github.com/lai323/idict/dict"
 	"github.com/lai323/idict/ui"
 	"github.com/lai323/idict/utils"
-	"github.com/lai323/idict/wordset"
 	"github.com/muesli/reflow/wordwrap"
 )
 
 type NextMsg struct {
-	word wordset.Word
+	word db.Word
 }
 
 func init() {
 	rand.Seed(time.Now().Unix())
 }
 
-func getWords(worsetName string, config *idictconfig.Config) (map[string]int, error) {
-	ws, err := wordset.NewWordSet(worsetName, wordset.WordSetManage{StoragePath: config.StoragePath}.WordSetDir())
-	if err != nil {
-		return ws.Words, err
+func initialModel(collection string, cfg *config.Config, dictdb db.DictDB, shuffle bool) (*PracModel, error) {
+	rememberCount := cfg.RememberCount()
+	if rememberCount == 0 {
+		return nil, fmt.Errorf("Practice rememberCount can not be 0")
 	}
-	exist, err := ws.Exist()
-	if err != nil {
-		return ws.Words, err
-	}
-	if !exist {
-		return ws.Words, fmt.Errorf("WrodSet %s not exist", worsetName)
-	}
-	err = ws.Load()
-	return ws.Words, nil
-}
+	m := &PracModel{}
 
-func initialModel(worsetName string, config *idictconfig.Config) (*PracModel, error) {
-	m := &PracModel{config: config}
+	collectionWords, err := dictdb.CollectionWords(collection)
+	if err != nil {
+		return m, err
+	}
+	total := len(collectionWords)
 
-	pefile := path.Join(config.StoragePath, "practice_extent.json")
-	pe, err := NewPracExtent(pefile, config.RestudyInterval)
+	words := map[string]*db.WordPractice{}
+	wordsOrder := []string{}
+	rememberedWords := []string{}
+	for _, w := range collectionWords {
+		info, err := dictdb.PracticeGet(w)
+		if err != nil {
+			return nil, err
+		}
+		if info.Degree >= rememberCount {
+			rememberedWords = append(rememberedWords, info.Text)
+			continue
+		}
+		words[info.Text] = &info
+		wordsOrder = append(wordsOrder, info.Text)
+	}
+	if shuffle {
+		rand.Shuffle(len(wordsOrder), func(i, j int) {
+			wordsOrder[i], wordsOrder[j] = wordsOrder[j], wordsOrder[i]
+		})
+	}
+
+	cli, err := dict.NewEuDictClient(dictdb)
 	if err != nil {
 		return m, err
 	}
 
-	words, err := getWords(worsetName, config)
-	if err != nil {
-		return m, err
-	}
-
-	wordNumTotal := len(words)
-	for _, w := range pe.RememberWords() {
-		delete(words, w)
-	}
-	wordslice := []string{}
-	for w := range words {
-		wordslice = append(wordslice, w)
-	}
-
-	cli, err := dict.NewEuDictClient(*config)
-	if err != nil {
-		return m, err
-	}
-
-	m.config = config
 	m.cli = cli
-	m.Words = wordslice
-	m.wordNumTotal = wordNumTotal
-	m.pracExtent = pe
+	m.dictdb = dictdb
+	m.words = words
+	m.wordsOrder = wordsOrder
+	m.rememberedWords = rememberedWords
+	m.total = total
 	m.textInput = textinput.NewModel()
 	m.textInput.Placeholder = "Type to input"
 	m.textInput.Focus()
@@ -88,6 +83,11 @@ func initialModel(worsetName string, config *idictconfig.Config) (*PracModel, er
 	m.textInput.CharLimit = 600
 	m.textInput.Width = 60
 	m.textInput.Placeholder = "__________"
+	m.ffplayPath = cfg.FfplayPath
+	m.ffplayArgs = cfg.FfplayArgs
+	m.groupNum = cfg.GroupNum
+	m.restudyInterval = cfg.RestudyInterval
+	m.rememberCount = rememberCount
 
 	m.helpmode = ui.HelpModel{
 		Keyhelp: [][]string{
@@ -100,7 +100,6 @@ func initialModel(worsetName string, config *idictconfig.Config) (*PracModel, er
 }
 
 type PracModel struct {
-	config              *idictconfig.Config
 	textInput           textinput.Model
 	viewport            viewport.Model
 	cli                 dict.DictClient
@@ -113,15 +112,23 @@ type PracModel struct {
 	answertext          string
 	successed           bool
 	failed              bool
-	Words               []string
-	wordNumTotal        int
-	pracExtent          pracExtent
-	sencursor           int
-	batchWord           []string
-	batchWordTotal      int
-	batchWordCursor     int
-	currentWord         wordset.Word
-	showAnswer          bool
+
+	dictdb          db.DictDB
+	words           map[string]*db.WordPractice
+	wordsOrder      []string
+	rememberedWords []string
+	total           int
+	sencursor       int
+	batchWord       []string
+	batchWordTotal  int
+	batchWordCursor int
+	currentWord     db.Word
+	showAnswer      bool
+	ffplayPath      string
+	ffplayArgs      []string
+	restudyInterval map[int]int
+	groupNum        int
+	rememberCount   int
 }
 
 func (m *PracModel) Init() tea.Cmd {
@@ -130,18 +137,55 @@ func (m *PracModel) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+func (m *PracModel) remember(w string) error {
+	p := m.words[w]
+	p.Degree = p.Degree + 1
+	p.LastTime = time.Now().Unix()
+	if p.Degree >= m.rememberCount {
+		m.rememberedWords = append(m.rememberedWords, w)
+	}
+	return m.dictdb.PracticePut(*p)
+}
+
+func (m *PracModel) forget(w string) error {
+	p := m.words[w]
+	p.Degree = 0
+	p.LastTime = time.Now().Unix()
+	return m.dictdb.PracticePut(*p)
+}
+
+func (m *PracModel) reviewWords() []string {
+	words := []string{}
+	now := time.Now().Unix()
+	for _, info := range m.words {
+		if info.Degree >= m.rememberCount || info.Degree == 0 {
+			continue
+		}
+		for count, hour := range m.restudyInterval {
+			if hour == -1 {
+				continue
+			}
+			if info.Degree <= count && info.LastTime+60*60*int64(hour) < now {
+				words = append(words, info.Text)
+				break
+			}
+		}
+	}
+	return words
+}
+
 func (m *PracModel) genBatchWord() {
-	words := m.pracExtent.ReviewWords()
-	if len(words) >= m.config.GroupNum {
-		words = words[:m.config.GroupNum]
+	words := m.reviewWords()
+	if len(words) >= m.groupNum {
+		words = words[:m.groupNum]
 	} else {
-		cursor := m.config.GroupNum - len(words)
-		if cursor > len(m.Words) {
-			cursor = len(m.Words)
+		cursor := m.groupNum - len(words)
+		if cursor > len(m.wordsOrder) {
+			cursor = len(m.wordsOrder)
 		}
 
-		words = append(words, m.Words[:cursor]...)
-		m.Words = m.Words[cursor:]
+		words = append(words, m.wordsOrder[:cursor]...)
+		m.wordsOrder = m.wordsOrder[cursor:]
 	}
 	m.batchWord = words
 	m.batchWordTotal = len(words)
@@ -157,24 +201,21 @@ func (m *PracModel) next() []tea.Cmd {
 		cmds = append(cmds, tea.Quit)
 		return cmds
 	}
-
-	voicecmd := m.config.FfplayPath
-	voicearg := m.config.FfplayArgs
 	wordtxet := m.batchWord[0]
 
-	if voicecmd != "" && wordtxet != "" {
+	if m.ffplayPath != "" && wordtxet != "" {
 		cmds = append(cmds, func() tea.Msg {
 			text := "QYN" + base64.StdEncoding.EncodeToString([]byte(wordtxet))
 			url := `https://api.frdic.com/api/v2/speech/speakweb?langid=en&voicename=en_us_female&txt=` + text
-			voicearg = append(voicearg, url)
-			cmd := exec.Command(voicecmd, voicearg...)
+			arg := append(m.ffplayArgs, url)
+			cmd := exec.Command(m.ffplayPath, arg...)
 			cmd.Run()
 			return dict.VoiceMsg{}
 		})
 	}
 
 	cmds = append(cmds, func() tea.Msg {
-		err, word := m.cli.FetchCache(wordtxet)
+		err, word := m.cli.Fetch(wordtxet)
 		if err != nil {
 			panic(err)
 		}
@@ -260,18 +301,18 @@ func (m *PracModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *PracModel) answer() {
-	m.answertext = strings.TrimSpace(strings.ToLower(m.textInput.Value()))
-	if m.answertext == strings.ToLower(m.currentWord.Text) {
+	m.answertext = strings.TrimSpace(m.textInput.Value())
+	if strings.ToLower(m.answertext) == strings.ToLower(m.currentWord.Text) {
 		m.successed = true
 		m.textInput.Blur()
 		m.batchWord = m.batchWord[1:]
-		err := m.pracExtent.Remember(m.currentWord.Text)
+		err := m.remember(m.currentWord.Text)
 		if err != nil {
 			panic(err)
 		}
 	} else {
 		m.failed = true
-		err := m.pracExtent.Forget(m.currentWord.Text)
+		err := m.forget(m.currentWord.Text)
 		if err != nil {
 			panic(err)
 		}
@@ -382,12 +423,12 @@ func (m *PracModel) PracView() string {
 	m.viewport.SetContent(wordwrap.String(m.viewportContent, m.viewport.Width))
 
 	infobarstr := infobar(
-		m.wordNumTotal,
-		len(m.pracExtent.RememberWords()),
-		len(m.pracExtent.ReviewWords()),
+		m.total,
+		len(m.rememberedWords),
+		len(m.reviewWords()),
 		m.batchWordTotal,
 		m.batchWordCursor,
-		m.pracExtent.CorrectNum(m.currentWord.Text),
+		m.words[m.currentWord.Text].Degree,
 		m.viewport.Width,
 	)
 	return strings.Join(
@@ -431,19 +472,19 @@ func infobar(total, remember, toreview, group, groupcursor, correct, width int) 
 	)
 }
 
-func Start(config *idictconfig.Config) func(string) error {
-	return func(worset string) error {
-		m, err := initialModel(worset, config)
-		if err != nil {
-			fmt.Printf("could not start program: %s\n", err)
-			os.Exit(1)
-		}
-		if err := tea.NewProgram(m).Start(); err != nil {
-			fmt.Printf("could not start program: %s\n", err)
-			os.Exit(1)
-		}
-		return nil
+func Start(cfg *config.Config, worset string, dictdb db.DictDB, shuffle bool) {
+	m, err := initialModel(worset, cfg, dictdb, shuffle)
+	if err != nil {
+		fmt.Printf("could not start program: %s\n", err)
+		dictdb.Close()
+		os.Exit(1)
 	}
+	if err := tea.NewProgram(m).Start(); err != nil {
+		fmt.Printf("could not start program: %s\n", err)
+		dictdb.Close()
+		os.Exit(1)
+	}
+	dictdb.Close()
 }
 
 func logfile(v interface{}) {

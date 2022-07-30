@@ -13,9 +13,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	idictconfig "github.com/lai323/idict/config"
+	"github.com/lai323/idict/config"
+	"github.com/lai323/idict/db"
 	"github.com/lai323/idict/ui"
-	"github.com/lai323/idict/wordset"
 	"github.com/muesli/reflow/wordwrap"
 	te "github.com/muesli/termenv"
 )
@@ -25,7 +25,7 @@ var (
 )
 
 type GuessMsg struct {
-	words []wordset.GuessWord
+	words []db.GuessWord
 }
 
 type guessModel struct {
@@ -62,13 +62,12 @@ func (m guessModel) View() string {
 type VoiceMsg struct {
 }
 
-func initialDictModel(text string, config *idictconfig.Config) (DictModel, error) {
-	m := DictModel{config: config}
-	cli, err := NewEuDictClient(*config)
+func initialDictModel(text string, cfg *config.Config, dictdb db.DictDB) (DictModel, error) {
+	m := DictModel{}
+	cli, err := NewEuDictClient(dictdb)
 	if err != nil {
 		return m, err
 	}
-	m.config = config
 	m.cli = cli
 	m.text = text
 	m.textInput = textinput.NewModel()
@@ -82,6 +81,8 @@ func initialDictModel(text string, config *idictconfig.Config) (DictModel, error
 	m.textInput.SetCursor(len(text))
 	m.guessctx = context.Background()
 	m.guessdelay = 500
+	m.ffplayPath = cfg.FfplayPath
+	m.ffplayArgs = cfg.FfplayArgs
 
 	m.helpmode = ui.HelpModel{
 		Keyhelp: [][]string{
@@ -101,7 +102,8 @@ func initialDictModel(text string, config *idictconfig.Config) (DictModel, error
 
 type DictModel struct {
 	cli             DictClient
-	config          *idictconfig.Config
+	ffplayPath      string
+	ffplayArgs      []string
 	text            string
 	ready           bool
 	textInput       textinput.Model
@@ -128,7 +130,7 @@ func (m DictModel) Init() tea.Cmd {
 
 func (m *DictModel) fetchCmd(text string) func() tea.Msg {
 	return func() tea.Msg {
-		err, word := m.cli.FetchCache(text)
+		err, word := m.cli.Fetch(text)
 		if err != nil {
 			panic(fmt.Errorf("fetch translate word error: %s", err.Error()))
 		}
@@ -143,18 +145,16 @@ func (m *DictModel) helpCmd() tea.Cmd {
 }
 
 func (m *DictModel) voiceCmd() tea.Cmd {
-	voicecmd := m.config.FfplayPath
-	voicearg := m.config.FfplayArgs
 	word := m.transmodel.Word.Text
-	if !(voicecmd != "" && word != "") {
+	if !(m.ffplayPath != "" && word != "") {
 		return nil
 	}
 
 	return func() tea.Msg {
 		text := "QYN" + base64.StdEncoding.EncodeToString([]byte(word))
 		url := `https://api.frdic.com/api/v2/speech/speakweb?langid=en&voicename=en_us_female&txt=` + text
-		voicearg = append(voicearg, url)
-		cmd := exec.Command(voicecmd, voicearg...)
+		arg := append(m.ffplayArgs, url)
+		cmd := exec.Command(m.ffplayPath, arg...)
 		cmd.Run()
 		return VoiceMsg{}
 	}
@@ -352,19 +352,25 @@ func (m DictModel) View() string {
 	)
 }
 
-func Start(config *idictconfig.Config) func(string) error {
-	return func(text string) error {
-		m, err := initialDictModel(text, config)
-		if err != nil {
-			fmt.Printf("could not start program: %s\n", err)
-			os.Exit(1)
-		}
-		if err := tea.NewProgram(m).Start(); err != nil {
-			fmt.Printf("could not start program: %s\n", err)
-			os.Exit(1)
-		}
-		return nil
+func Start(cfg *config.Config, text string) {
+	dictdb, err := db.NewBoltDictDB(cfg.DbFile())
+	if err != nil {
+		fmt.Printf("could not start program: %s\n", err)
+		os.Exit(1)
 	}
+	m, err := initialDictModel(text, cfg, dictdb)
+	if err != nil {
+		fmt.Printf("could not start program: %s\n", err)
+		os.Exit(1)
+		dictdb.Close()
+	}
+	if err := tea.NewProgram(m).Start(); err != nil {
+		fmt.Printf("could not start program: %s\n", err)
+		os.Exit(1)
+		dictdb.Close()
+
+	}
+	dictdb.Close()
 }
 
 func logfile(v interface{}) {

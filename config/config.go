@@ -19,6 +19,20 @@ type Config struct {
 	RestudyInterval map[int]int
 }
 
+func (cfg Config) DbFile() string {
+	return path.Join(cfg.StoragePath, "data.db")
+}
+
+func (cfg Config) RememberCount() int {
+	rememberCount := 0
+	for count, hour := range cfg.RestudyInterval {
+		if hour == -1 {
+			rememberCount = count
+		}
+	}
+	return rememberCount
+}
+
 var (
 	DefaultConfig     Config
 	DefaultConfigDir  string

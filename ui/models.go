@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lai323/idict/wordset"
+	"github.com/lai323/idict/db"
 )
 
 type WordMsg struct {
-	wordset.Word
+	db.Word
 }
 
 type TransModel struct {
-	Word wordset.Word
+	Word db.Word
 }
 
 func (m TransModel) View() string {

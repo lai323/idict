@@ -1,22 +1,18 @@
 package dict
 
 import (
-	// "bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 
-	// "io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 
-	// "os"
-	"regexp"
 	"strings"
 
 	"github.com/antchfx/htmlquery"
-	"github.com/lai323/idict/config"
-	"github.com/lai323/idict/wordset"
+	"github.com/lai323/idict/db"
 	"github.com/muesli/termenv"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/charset"
@@ -25,67 +21,44 @@ import (
 var term = termenv.ColorProfile()
 
 type DictClient interface {
-	Fetch(string) (error, wordset.Word)
-	Guess(string) (error, []wordset.GuessWord)
-	FetchCache(string) (error, wordset.Word)
+	Guess(string) (error, []db.GuessWord)
+	Fetch(string) (error, db.Word)
 }
 
 type EuDictClient struct {
-	config         config.Config
-	wordcache      wordset.WordCache
-	defaultWordset wordset.WordSet
+	dictdb db.DictDB
 }
 
-func NewEuDictClient(config config.Config) (EuDictClient, error) {
-	cli := EuDictClient{}
-	defaultWordset, err := wordset.NewWordSet("default", wordset.WordSetManage{StoragePath: config.StoragePath}.WordSetDir())
-	if err != nil {
-		return cli, err
-	}
-
-	err = defaultWordset.Load()
-	if err != nil {
-		return cli, err
-	}
-
-	wordcache, err := wordset.NewWordCache(config.StoragePath)
-	if err != nil {
-		return cli, err
-	}
-	cli.config = config
-	cli.wordcache = wordcache
-	cli.defaultWordset = defaultWordset
-	return cli, err
+func NewEuDictClient(dictdb db.DictDB) (EuDictClient, error) {
+	cli := EuDictClient{dictdb: dictdb}
+	return cli, nil
 }
 
-func (d EuDictClient) FetchCache(text string) (error, wordset.Word) {
-	word, exist, err := d.wordcache.Get(text)
+func (d EuDictClient) Fetch(text string) (error, db.Word) {
+	w, err := d.dictdb.Get(text)
 	if err != nil {
-		return err, word
+		return err, db.Word{}
 	}
-	if err != nil {
-		return err, word
-	}
-	if exist {
-		if word.PronounceUS.Phonetic != "" || word.PronounceUK.Phonetic != "" {
-			err = d.defaultWordset.Append(word.Text)
+	if w != nil {
+		if w.PronounceUS.Phonetic != "" || w.PronounceUK.Phonetic != "" {
+			err = d.dictdb.CollectionPut(db.DEFAULT_COLL, []string{w.Text})
 			if err != nil {
-				return err, word
+				return err, db.Word{}
 			}
 		}
-		return nil, word
+		return nil, *w
 	}
 
-	err, word = d.Fetch(text)
+	err, word := d.fetch(text)
 	if err != nil {
 		return err, word
 	}
 	if word.PronounceUS.Phonetic != "" || word.PronounceUK.Phonetic != "" {
-		err = d.wordcache.Set(word)
+		err = d.dictdb.Put(word)
 		if err != nil {
 			return err, word
 		}
-		err = d.defaultWordset.Append(word.Text)
+		err = d.dictdb.CollectionPut(db.DEFAULT_COLL, []string{word.Text})
 		if err != nil {
 			return err, word
 		}
@@ -93,18 +66,18 @@ func (d EuDictClient) FetchCache(text string) (error, wordset.Word) {
 	return err, word
 }
 
-func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
+func (d EuDictClient) fetch(text string) (error, db.Word) {
 	var (
 		err       error
-		word      wordset.Word
-		phrases   []wordset.Phrase
-		sentences []wordset.Sentence
+		word      db.Word
+		phrases   []db.Phrase
+		sentences []db.Sentence
 	)
 	if text == "" {
 		return err, word
 	}
 
-	word.Text = strings.TrimSpace(strings.ToLower(text))
+	word.Text = strings.TrimSpace(text)
 	resp, err := euquery(text)
 	if err != nil {
 		return err, word
@@ -141,9 +114,9 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		phoneticUK := htmlquery.InnerText(htmlquery.FindOne(pronouncelist[0], `./text()`))
 		if len(pronouncelist) == 2 {
 			phoneticUS := htmlquery.InnerText(htmlquery.FindOne(pronouncelist[1], `./text()`))
-			word.PronounceUS = wordset.Pronounce{Phonetic: phoneticUS}
+			word.PronounceUS = db.Pronounce{Phonetic: phoneticUS}
 		}
-		word.PronounceUK = wordset.Pronounce{Phonetic: phoneticUK}
+		word.PronounceUK = db.Pronounce{Phonetic: phoneticUK}
 	}
 
 	translatelist := htmlquery.Find(doc, `//div[@id="ExpFCChild"]/ol/li`)
@@ -162,7 +135,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		if transText == "" {
 			continue
 		}
-		word.Translates = append(word.Translates, wordset.Translate{Part: transiText, Mean: transText})
+		word.Translates = append(word.Translates, db.Translate{Part: transiText, Mean: transText})
 	}
 
 	translatelist1 := htmlquery.Find(doc, `//div[@id="ExpFCChild"]//div[@class="exp"]|//div[@id="ExpFCChild"]//div[@class="exp"]/ol/li`)
@@ -174,7 +147,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 			if transText == "" {
 				continue
 			}
-			word.Translates = append(word.Translates, wordset.Translate{Mean: transText})
+			word.Translates = append(word.Translates, db.Translate{Mean: transText})
 		}
 	}
 
@@ -188,7 +161,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		if transText == "" {
 			continue
 		}
-		word.Translates = append(word.Translates, wordset.Translate{Mean: transText})
+		word.Translates = append(word.Translates, db.Translate{Mean: transText})
 	}
 
 	translatelist3 := htmlquery.FindOne(doc, `//div[@id="ExpFCChild"]`)
@@ -207,7 +180,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 			transiText = strings.TrimSpace(htmlquery.InnerText(transinode))
 
 		}
-		word.Translates = append(word.Translates, wordset.Translate{Part: transiText, Mean: transText})
+		word.Translates = append(word.Translates, db.Translate{Part: transiText, Mean: transText})
 	}
 
 	// {
@@ -232,7 +205,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		}
 		transText := string(transb)
 		if transText != "" {
-			word.Translates = append(word.Translates, wordset.Translate{Mean: transText})
+			word.Translates = append(word.Translates, db.Translate{Mean: transText})
 		}
 	}
 
@@ -249,7 +222,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		phrasetext = htmlquery.InnerText(itext)
 		phrasetrans = htmlquery.InnerText(htmlquery.FindOne(pdiv, `./span/text()`))
 		// fmt.Println(phrasetext, phrasetrans)
-		phrases = append(phrases, wordset.Phrase{Word: text, Text: phrasetext, Trans: phrasetrans})
+		phrases = append(phrases, db.Phrase{Word: text, Text: phrasetext, Trans: phrasetrans})
 	}
 	sentenceslist := htmlquery.Find(doc, `// div[@class="lj_item"]/div[@class="content"]`)
 	for _, sdiv := range sentenceslist {
@@ -260,7 +233,7 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 		senttext = htmlquery.InnerText(htmlquery.FindOne(sdiv, `./p[@class="line"]`))
 		senttrans = htmlquery.InnerText(htmlquery.FindOne(sdiv, `./p[@class="exp"]`))
 		// fmt.Println(senttext, senttrans)
-		sentences = append(sentences, wordset.Sentence{Word: text, Text: senttext, Trans: senttrans})
+		sentences = append(sentences, db.Sentence{Word: text, Text: senttext, Trans: senttrans})
 	}
 
 	word.Phrases = phrases
@@ -268,9 +241,9 @@ func (d EuDictClient) Fetch(text string) (error, wordset.Word) {
 	return err, word
 }
 
-func (d EuDictClient) Guess(text string) (error, []wordset.GuessWord) {
+func (d EuDictClient) Guess(text string) (error, []db.GuessWord) {
 	var (
-		guesses []wordset.GuessWord
+		guesses []db.GuessWord
 		err     error
 	)
 	if text == "" {
@@ -341,7 +314,6 @@ func euquery(text string) (*http.Response, error) {
 	req.Header.Set("sec-fetch-mode", "navigate")
 	req.Header.Set("sec-fetch-user", "?1")
 	req.Header.Set("sec-fetch-dest", "document")
-	// req.Header.Set("referer", "https://dict.eudic.net/dicts/en/illuminate")
 	req.Header.Set("referer", "https://dict.eudic.net/dicts/")
 	req.Header.Set("accept-language", "zh-CN,zh;q=0.9,en;q=0.8")
 	return client.Do(req)
