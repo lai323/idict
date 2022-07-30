@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,17 @@ func initialModel(collection string, cfg *config.Config, dictdb db.DictDB, shuff
 		})
 	}
 
+	restudyIntervals := []restudyInterval{}
+	for degree, hour := range cfg.RestudyInterval {
+		if hour == -1 {
+			continue
+		}
+		restudyIntervals = append(restudyIntervals, restudyInterval{Degree: degree, Hour: hour})
+	}
+	sort.Slice(restudyIntervals, func(i, j int) bool {
+		return restudyIntervals[i].Degree > restudyIntervals[j].Degree
+	})
+
 	cli, err := dict.NewEuDictClient(dictdb)
 	if err != nil {
 		return m, err
@@ -86,7 +98,7 @@ func initialModel(collection string, cfg *config.Config, dictdb db.DictDB, shuff
 	m.ffplayPath = cfg.FfplayPath
 	m.ffplayArgs = cfg.FfplayArgs
 	m.groupNum = cfg.GroupNum
-	m.restudyInterval = cfg.RestudyInterval
+	m.restudyInterval = restudyIntervals
 	m.rememberCount = rememberCount
 
 	m.helpmode = ui.HelpModel{
@@ -97,6 +109,11 @@ func initialModel(collection string, cfg *config.Config, dictdb db.DictDB, shuff
 		},
 	}
 	return m, nil
+}
+
+type restudyInterval struct {
+	Degree int
+	Hour   int
 }
 
 type PracModel struct {
@@ -126,7 +143,7 @@ type PracModel struct {
 	showAnswer      bool
 	ffplayPath      string
 	ffplayArgs      []string
-	restudyInterval map[int]int
+	restudyInterval []restudyInterval
 	groupNum        int
 	rememberCount   int
 }
@@ -161,14 +178,18 @@ func (m *PracModel) reviewWords() []string {
 		if info.Degree >= m.rememberCount || info.Degree == 0 {
 			continue
 		}
-		for count, hour := range m.restudyInterval {
-			if hour == -1 {
-				continue
-			}
-			if info.Degree <= count && info.LastTime+60*60*int64(hour) < now {
-				words = append(words, info.Text)
+		match := false
+		for _, r := range m.restudyInterval {
+			if info.Degree >= r.Degree {
+				match = true
+				if info.LastTime+60*60*int64(r.Hour) < now {
+					words = append(words, info.Text)
+				}
 				break
 			}
+		}
+		if !match {
+			words = append(words, info.Text)
 		}
 	}
 	return words
